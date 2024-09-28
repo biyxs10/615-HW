@@ -1,0 +1,134 @@
+---
+title: "615 HW4"
+output:
+  html_document: default
+  pdf_document: default
+date: "2024-09-25"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###a 
+Read in the data for all the years from 1985 to 2023.
+
+```{r}
+library(data.table)
+years <- 1985:2023
+file_root <- "https://www.ndbc.noaa.gov/view_text_file.php?filename=44013h"
+tail <- ".txt.gz&dir=data/historical/stdmet/"
+all_data <- list()
+for (year in years) {
+  path <- paste0(file_root, year, tail)
+  header <- scan(path, what = 'character', nlines = 1)
+  skip_lines <- ifelse(year < 2007, 1, 2)  
+  buoy_data <- fread(path, header = FALSE, skip = skip_lines, fill = TRUE)
+ if (ncol(buoy_data) == length(header)) {
+    colnames(buoy_data) <- header
+  } else {
+    warning(paste("Data for year", year, "has inconsistent number of columns. Skipping header assignment."))
+  }
+  all_data[[as.character(year)]] <- buoy_data
+}
+```
+
+```{r}
+lapply(names(all_data), function(year) {
+  cat("\nYear:", year, "\n")
+  print(all_data[[year]])
+})
+```
+
+###b
+Identify and deal with the null data in the dataset.
+```{r}
+variables_na<-list(WDIR=99,
+                   WVHT=99,
+                   DPD=99, 
+                   APD=99, 
+                   MWD=999,
+                   DEWP=999, 
+                   VIS=99,
+                   TIDE=99)
+replace_na<-function(df, variables_na){
+  for (col in names(variables_na)) {
+    if (col %in% colnames(df)) {
+      df[[col]][df[[col]] == variables_na[[col]]] <- NA
+    }
+  }
+  return(df)
+}
+all_data <- replace_na(all_data, variables_na)
+print(all_data)
+```
+$When null data has a specific interpretation in a dataset, it can be adjusted according to the context, rather than being directly converted to NA.$
+
+
+###c
+Use the Buoy data to see the effects of climate change:
+
+$\To reflect the climate change trends, we can choose these variables: ATMP (Air temperature),WTMP(Sea surface temperature ), then analysis the overall trends between 1985 and 2023.$
+
+```{r}
+library(tidyverse)
+library(data.table)
+combined_data <- rbindlist(all_data, fill = TRUE, idcol = "year")
+annual_avg <- combined_data %>%
+  group_by(year) %>%
+  summarize(
+    avg_WTMP = mean(as.numeric(WTMP), na.rm = TRUE),
+    avg_ATMP = mean(as.numeric(ATMP), na.rm = TRUE)
+  )
+
+ggplot(annual_avg, aes(x = as.numeric(year))) +
+  geom_line(aes(y = avg_WTMP, color = "Sea surface Temperature")) +
+  geom_line(aes(y = avg_ATMP, color = "Air Temperature")) +
+  geom_smooth(aes(y = avg_WTMP), method = "lm", se = FALSE, linetype = "dashed", color = "blue") +
+  geom_smooth(aes(y = avg_ATMP), method = "lm", se = FALSE, linetype = "dashed", color = "red") +
+  labs(title = "Annual Average Temperatures (1985-2023)",
+       x = "Year", y = "Temperature (°C)",
+       color = "Temperature Type") 
+```
+$\The figure shows that the general trend of water temperature is down, and the general trend of air temperature is up. Extreme values have occurred in both cases.$
+
+```{r}
+wtmp_lm <- lm(avg_WTMP ~ year, data = annual_avg)
+summary(wtmp_lm)
+atmp_lm <- lm(avg_ATMP ~ year, data = annual_avg)
+summary(atmp_lm)
+
+```
+
+###d
+```{r}
+rainfall_data<-read.csv("C:\\Users\\PC\\Desktop\\615\\Rainfall.csv", header= TRUE)
+calculate_annual_rainfall <- function(rainfall_data) {
+  rainfall_data <- rainfall_data %>%
+    mutate(DATE = as.POSIXct(DATE, format = "%Y%m%d %H:%M"),  
+           Year = year(DATE))  
+  annual_rainfall <- rainfall_data %>%
+    group_by(Year) %>%
+    summarise(total_rainfall = sum(HPCP, na.rm = TRUE))  
+  
+  return(annual_rainfall)
+}
+annual_rainfall <- calculate_annual_rainfall(rainfall_data)
+print(annual_rainfall)
+```
+
+```{R}
+summary(annual_rainfall)
+summary(buoy_data)
+
+ggplot(annual_rainfall, aes(x = Year, y = total_rainfall)) +
+  geom_line() +
+  labs(title = "Rainfall in Boston (1985-2013)", x = "Year", y = "Rainfall (g)")
+
+buoy_data %>%
+  summarise(WTMP_avg = mean(WTMP, na.rm = TRUE),
+            ATMP_avg = mean(ATMP, na.rm = TRUE))
+```
+
+
+
